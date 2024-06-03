@@ -27,9 +27,6 @@ class HashtagView(generics.ListCreateAPIView):
             except TagCount.DoesNotExist:
                 tag_obj = TagCount.objects.create(tag=tag)
 
-            tag_obj.refresh_from_db()
-            cache.set(tag, tag_obj.count)
-
         return Response({'success': 'tag count updated'}, status=status.HTTP_201_CREATED)
     
     def get(self, request, *args, **kwargs):
@@ -37,7 +34,12 @@ class HashtagView(generics.ListCreateAPIView):
         if not tag:
             return Response({'error': 'tag is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        tag_count = cache.get(tag)
+        tag_count = 0
+        try:
+            tag_count = TagCount.objects.get(tag=tag).count
+        except TagCount.DoesNotExist:
+            pass
+
         return Response({'message': 'success', 'count':tag_count}, status=status.HTTP_200_OK)
 
 class HashtagSearchView(generics.ListAPIView):
@@ -50,3 +52,17 @@ class HashtagSearchView(generics.ListAPIView):
                 return TagCount.objects.filter(tag__icontains=tag[1:])
             return TagCount.objects.filter(tag__icontains=tag)
         return TagCount.objects.all()
+    
+    def get(self, request, *args, **kwargs):
+        tag = self.request.GET.get('tag', None)
+        tags = cache.get(tag)
+
+        if tags:
+            return Response(json.loads(tags), status=status.HTTP_200_OK)
+
+        queryset = self.get_queryset()
+        serializer = self.serializer_class(queryset, many=True)
+        cache.set(tag, json.dumps(serializer.data), 60)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        
